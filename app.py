@@ -6,7 +6,7 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, Callback
 from telegram.error import BadRequest
 
 # ADMIN AÇAR SÖZI
-ADMIN_PASSWORD = "ADNİOBERTİ61"
+ADMIN_PASSWORD = "ADNİOBERTJİ61"
 admin_mode = {}
 
 # DEFAULT SAZLAMALAR
