@@ -21,12 +21,14 @@ def get_statika_text():
     return f"📊 Statika:\n— Agza bolan ulanyjylar: {len(users)}"
 
 
-# Agza bolmaly kanallar üçin düwmeler döredýär
-def get_channels_keyboard():
+# Sponsor kanallary + AGZA BOLDUM düwmesini birleşdirýän keyboard
+def get_sponsor_check_keyboard():
     keyboard = types.InlineKeyboardMarkup()
     for name, link in channels:
-        # Düwmeler "name - link" görnüşinde, '+' ýa-da başga belgi goşulmaýar
         keyboard.add(types.InlineKeyboardButton(text=name, url=link))
+    
+    # AGZA BOLDUM düwmesini goş
+    keyboard.add(types.InlineKeyboardButton(text="✅ AGZA BOLDUM", callback_data="check_subs"))
     return keyboard
 
 
@@ -45,6 +47,15 @@ menu_text = (
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    users.add(message.chat.id)
+    username = message.from_user.first_name or "Ulanyjy"
+
+    # Sponsor + AGZA BOLDUM bilen bilelikde diňe bir habarda çykar
+    bot.send_message(
+        message.chat.id,
+        "📢 Agza bolmaly kanallara girmegiňizi haýyş edýäris. Soňra \"✅ AGZA BOLDUM\" düwmesine basyň:",
+        reply_markup=get_sponsor_check_keyboard()
+    )
     users.add(message.chat.id)  # Her gezek start basylanda agza sanyna goşulýar
     username = message.from_user.first_name or "Ulanyjy"
     
@@ -111,6 +122,26 @@ def admin_panel_actions(message):
     else:
         # Admin panelde däl-de, başga zat ýazylsa
         bot.send_message(message.chat.id, "❓ Nädip kömek edip bilerin? Admin panelde bolmadyk bu buýruk ýa ýazgy.")
+
+@bot.callback_query_handler(func=lambda call: call.data == "check_subs")
+def check_subscriptions(call):
+    user_id = call.from_user.id
+    not_subscribed = []
+
+    for _, channel_link in channels:
+        try:
+            channel_username = channel_link.split("/")[-1]
+            member = bot.get_chat_member(f"@{channel_username}", user_id)
+            if member.status not in ["member", "administrator", "creator"]:
+                not_subscribed.append(channel_username)
+        except Exception as e:
+            not_subscribed.append(channel_username)
+
+    if not_subscribed:
+        bot.answer_callback_query(call.id, "📛 Käbir kanallara heniz agza bolan dälsiňiz!", show_alert=True)
+    else:
+        bot.answer_callback_query(call.id, "✅ Ulgama üstünlikli girildi!")
+        bot.send_message(call.message.chat.id, menu_text.format(username=call.from_user.first_name))
 
 
 # Ýadyňyzda saklaň, bu funksiýalar ýönekeý nusga üçin. Siz özüňize görä maglumatlary saklamak we okamak koduny goşmaly.
