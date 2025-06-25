@@ -1,106 +1,152 @@
 import telebot
 from telebot import types
 
-TOKEN = '7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4'  # 🔐 Bot tokeniňi şu ýere goý
+# Bot tokeny giriziň
+TOKEN = '7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4'
 bot = telebot.TeleBot(TOKEN)
 
-# 🔐 Admin açarsözi
-ADMIN_PASSWORD = "ADNİOBERTİ61"
-
-# 📢 Sponsor kanallar
-sponsor_channels = {
-    "📡 Kanal 1": "https://t.me/DM_SERVERS",
-    "📡 Kanal 2": "https://t.me/DM_404CHAT"
-}
-
-# 🧠 Admin statusyny saklaýan sözlük
+# Açarsöz
+admin_password = "ADNİOBERTİ61"
 admin_users = set()
 
-# 📋 Esasy menýu
-menu_text = """
-👋 Salam, {username}!
+# VPN kod sanawy (bir görnüşli)
+vpn_code = "vpn-code-example"
 
-Botdan peýdalanmak üçin aşakdaky menýudan peýdalanyň:
-✅ Agza boldum
-🔑 admin_gir — Admin paneli açmak üçin
-"""
+# Sponsor kanallary
+sponsor_channels = ["@examplechannel1", "@examplechannel2"]
 
-# 🔐 Admin panel menýusy
-admin_panel_text = """
-👑 *Admin Panel*
+# Menýu ýazgy
+menu_text = "\U0001F44B Salam, {username}! VPN kody almak üçin aşakdaky kanallara agza boluň."
 
-1️⃣ Post goşmak
-2️⃣ Postlary görmek
-3️⃣ Postlary arassala
-4️⃣ Aralyk (sekundda) üýtgetmek
-5️⃣ Menýu ýazgysyny üýtgetmek
-6️⃣ VPN kodyny üýtgetmek
-🔚 Çykmak
-"""
-
-# ✅ Agzalyk barlagy
+# Agzalyk barlaýjy
 def check_subscription(user_id):
-    for name, link in sponsor_channels.items():
+    for channel in sponsor_channels:
         try:
-            chat_member = bot.get_chat_member(link, user_id)
-            if chat_member.status in ['left', 'kicked']:
+            member = bot.get_chat_member(channel, user_id)
+            if member.status in ['left']:
                 return False
         except:
             return False
     return True
 
-# 📩 Kanal barlag menýusy
+# Start komanda
 def send_subscription_menu(chat_id):
     markup = types.InlineKeyboardMarkup()
-    for name, link in sponsor_channels.items():
-        markup.add(types.InlineKeyboardButton(text=name, url=link))
-    markup.add(types.InlineKeyboardButton(text="✅ Agza boldum", callback_data="check_sub"))
-    bot.send_message(chat_id, "➕ Ilki bilen aşakdaky kanallara agza boluň:", reply_markup=markup)
+    for ch in sponsor_channels:
+        markup.add(types.InlineKeyboardButton(text=f"➕ {ch}", url=f"https://t.me/{ch[1:]}"))
+    markup.add(types.InlineKeyboardButton(text="✅ AGZA BOLDUM", callback_data="check_member"))
+    bot.send_message(chat_id, "VPN kody almak üçin aşakdaky kanallara agza boluň:", reply_markup=markup)
 
-# ▶ /start komandasy
 @bot.message_handler(commands=['start'])
 def start(message):
-    user_id = message.chat.id
-    if not check_subscription(user_id):
-        send_subscription_menu(user_id)
+    if not check_subscription(message.chat.id):
+        send_subscription_menu(message.chat.id)
     else:
         username = message.from_user.first_name
-        bot.send_message(user_id, menu_text.format(username=username))
+        bot.send_message(message.chat.id, menu_text.format(username=username))
+        bot.send_message(message.chat.id, f"\u2705 Agzalygyňyz barlandy! Kodyňyz: \n{vpn_code}", parse_mode='Markdown')
 
-# 🔘 Agza boldum düwmesini barla
-@bot.callback_query_handler(func=lambda call: call.data == "check_sub")
+# AGZA BOLDUM düwmesi üçin
+@bot.callback_query_handler(func=lambda call: call.data == "check_member")
 def callback_check(call):
     if check_subscription(call.message.chat.id):
-        bot.send_message(call.message.chat.id, "✅ Agzalyk barlandy! VPN koduňyz: `vpn-kod-example`", parse_mode='Markdown')
+        bot.send_message(call.message.chat.id, f"\u2705 Agzalygyňyz barlandy! Kodyňyz: \n{vpn_code}")
     else:
-        bot.send_message(call.message.chat.id, "⛔ Ilki kanallara agza bolmaly!")
+        bot.send_message(call.message.chat.id, "\u274C Ilki bilen ähli kanallara agza boluň!")
 
-# 🔑 Admin gir komandasy
-@bot.message_handler(commands=['admin'])
-def admin(message):
-    msg = bot.send_message(message.chat.id, "🔑 Açarsözi giriziň:")
-    bot.register_next_step_handler(msg, check_admin_password)
+# Admin panel açmak üçin
+@bot.message_handler(commands=['admin_gir'])
+def ask_password(message):
+    msg = bot.send_message(message.chat.id, "\U0001F511 Admin açarsözüni giriziň:")
+    bot.register_next_step_handler(msg, check_password)
 
-# 🔍 Açarsözi barla
-def check_admin_password(message):
-    if message.text == ADMIN_PASSWORD:
+def check_password(message):
+    if message.text == admin_password:
         admin_users.add(message.chat.id)
-        bot.send_message(message.chat.id, admin_panel_text, parse_mode='Markdown')
+        show_admin_panel(message.chat.id)
     else:
-        bot.send_message(message.chat.id, "❌ Açarsöz ýalňyş!")
+        bot.send_message(message.chat.id, "\u274C Nädogry açarsöz!")
 
-# 🧾 Admin komandasy
-@bot.message_handler(func=lambda msg: msg.text in ['1', '2', '3', '4', '5', '6', 'Çykmak', 'çykmak'])
-def admin_panel_handler(message):
-    if message.chat.id not in admin_users:
-        return bot.send_message(message.chat.id, "⛔ Admin panel üçin rugsat ýok!")
-    
-    if message.text == 'Çykmak' or message.text == 'çykmak':
-        admin_users.remove(message.chat.id)
-        return bot.send_message(message.chat.id, "🔒 Admin panelden çykdyňyz.")
+# Admin paneli
 
-    bot.send_message(message.chat.id, f"✳ Funksiýa {message.text} saýlandy. (Ýöne häzirki wagtda ýerine ýetirilmeýär.)")
+def show_admin_panel(chat_id):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("📝 Menýu üýtgetmek", "🔐 VPN kod üýtgetmek")
+    markup.row("📢 Sponsor kanallary", "📊 STATIKA")
+    markup.row("🤖 Awto Poster", "🚪 Panelden çyk")
+    bot.send_message(chat_id, "\U0001F6E0 Admin paneline hoş geldiňiz:", reply_markup=markup)
 
-# ▶ Bot işleýär
-print("🤖 Bot işläp başlady...")
+@bot.message_handler(func=lambda m: m.chat.id in admin_users)
+def handle_admin(message):
+    if message.text == "📝 Menýu üýtgetmek":
+        msg = bot.send_message(message.chat.id, "Täze menýu ýazgyny giriziň:")
+        bot.register_next_step_handler(msg, change_menu)
+
+    elif message.text == "🔐 VPN kod üýtgetmek":
+        msg = bot.send_message(message.chat.id, "Täze VPN kodyny giriziň:")
+        bot.register_next_step_handler(msg, change_vpn)
+
+    elif message.text == "📢 Sponsor kanallary":
+        msg = bot.send_message(message.chat.id, "Sponsor kanallary (arasynda boşluk bilen):")
+        bot.register_next_step_handler(msg, change_channels)
+
+    elif message.text == "📊 STATIKA":
+        bot.send_message(message.chat.id, "👤 user1 – 10/10\n👤 user2 – 5/10")
+
+    elif message.text == "🤖 Awto Poster":
+        msg = bot.send_message(message.chat.id, "Ugratyljak haty giriziň:")
+        bot.register_next_step_handler(msg, get_post_text)
+
+    elif message.text == "🚪 Panelden çyk":
+        admin_users.discard(message.chat.id)
+        bot.send_message(message.chat.id, "Admin panelden çykdyňyz.", reply_markup=types.ReplyKeyboardRemove())
+
+# Menýu üýtgetmek
+
+def change_menu(message):
+    global menu_text
+    menu_text = message.text
+    bot.send_message(message.chat.id, "📝 Menýu täzelendi!")
+
+# VPN kod üýtgetmek
+
+def change_vpn(message):
+    global vpn_code
+    vpn_code = message.text
+    bot.send_message(message.chat.id, "🔐 VPN kody täzelendi!")
+
+# Sponsor kanallary üýtgetmek
+
+def change_channels(message):
+    global sponsor_channels
+    sponsor_channels = message.text.split()
+    bot.send_message(message.chat.id, "📢 Kanallar täzelendi!")
+
+# Awto poster
+post_data = {}
+
+def get_post_text(message):
+    post_data[message.chat.id] = {"text": message.text}
+    msg = bot.send_message(message.chat.id, "Sekundda wagt giriziň:")
+    bot.register_next_step_handler(msg, set_post_timer)
+
+def set_post_timer(message):
+    try:
+        seconds = int(message.text)
+        post = post_data.get(message.chat.id)
+        bot.send_message(message.chat.id, f"✅ Post ýatda saklandy we her {seconds} sekuntdan botda görkeziler.")
+        auto_post_loop(post['text'], seconds, message.chat.id)
+    except:
+        bot.send_message(message.chat.id, "❌ Nädogry wagt!")
+
+def auto_post_loop(text, delay, chat_id):
+    import threading, time
+    def loop():
+        while chat_id in admin_users:
+            bot.send_message(chat_id, f"🟢 Awto post:\n{text}")
+            time.sleep(delay)
+    threading.Thread(target=loop).start()
+
+# Boty işledýäris
+print("Bot işe başlady...")
 bot.infinity_polling()
