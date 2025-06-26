@@ -86,6 +86,6 @@ def show_admin_menu(chat_id):
     markup.row("5. Awto poster sazlamalary", "⬅️ Çykmak")
     bot.send_message(chat_id, "🛠️ Admin paneliň menýusy:", reply_markup=markup)
     
-    if __name__ == "__main__":
+if __name__ == "__main__":
     print("Bot işläp başlady...")
     bot.polling(non_stop=True)
