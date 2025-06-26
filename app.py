@@ -42,7 +42,9 @@ def joined_callback(call):
                           text="🟢 Agzalygyňyz tassyklanyldy! Indi boty ulanyp bilersiňiz.")
     show_main_menu(user_id)
     def show_main_menu(chat_id):
+    def mysal_funk():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    # beýleki kodlar
     markup.row("VPN kodlaryny almak", "Statika görmek")
     markup.row("Admin panel", "Köp soralanlar")
     bot.send_message(chat_id, "Hyzmatlary saýlaň:", reply_markup=markup)
