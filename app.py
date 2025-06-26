@@ -1,69 +1,68 @@
 import telebot
 from telebot import types
 
-TOKEN = '7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4'
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot("7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4")  # <-- Bu ýere öz tokeniňi ýaz
 
-# Kanallar: [("DM CHANEL", "https://t.me/dm_servers")]
-channels = [("DM CHANEL", "https://t.me/dm_servers")]
-menu_text = "\u2709 Menýu:\n1. Post goşmak\n2. Postlary görmek\n3. Postlary arassala\n4. Aralyk (sekundda): 'Aralyk <sekund>'"
+# Açarsöz
+ADMIN_PASSWORD = "ADNİOBERTİ61"
 
-admin_password = "ADNİOBERTİ61"
-admins = set()
+# Admin panel menu
 
-def check_subscribe_buttons():
-    markup = types.InlineKeyboardMarkup()
-    for name, link in channels:
-        markup.add(types.InlineKeyboardButton(text=name, url=link))
-    markup.add(types.InlineKeyboardButton("\u2705 AGZA BOLDUM", callback_data="check_subs"))
-    return markup
+def admin_paneli():
+    panel = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    panel.add("⚙️ Sazlamalar", "📊 Statistika")
+    panel.add("📰 Awto Poster", "📤 Bildiriş ugrat")
+    panel.add("🔙 Çyk")
+    return panel
 
+# /start komanda
 @bot.message_handler(commands=['start'])
-def start(message):
-    user_id = message.chat.id
-    if user_id not in admins:
-        text = "\u2709 Ilki bilen aşakdaky kanallara agza boluň:"
-        bot.send_message(user_id, text, reply_markup=check_subscribe_buttons())
+def start_handler(message):
+    menu = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    menu.add("📲 Admin panel")
+    bot.send_message(message.chat.id, "👋 Hoş geldiňiz! Menýudan saýlaň:", reply_markup=menu)
+
+# Admin panel komanda düwme bilen
+@bot.message_handler(func=lambda msg: msg.text == "📲 Admin panel")
+def admin_panel_start(message):
+    bot.send_message(message.chat.id, "🔐 Açarsözi giriziň:")
+    bot.register_next_step_handler(message, barla_acarsöz)
+
+# Açarsöz barlagy
+
+def barla_acarsöz(message):
+    if message.text == ADMIN_PASSWORD:
+        bot.send_message(message.chat.id, "✅ Admin panel açyldy.", reply_markup=admin_paneli())
     else:
-        bot.send_message(user_id, menu_text)
+        bot.send_message(message.chat.id, "❌ Nädogry açarsöz.")
 
-@bot.message_handler(commands=['admin_gir'])
-def admin_gir(message):
-    msg = bot.send_message(message.chat.id, "\ud83d\udd10 Açarsözi giriziň:")
-    bot.register_next_step_handler(msg, check_password)
+# Admin panel düwmeleri bilen işleýän funksiýalar
 
-def check_password(message):
-    if message.text == admin_password:
-        admins.add(message.chat.id)
-        bot.send_message(message.chat.id, "\u2705 Admin paneline üstünlikli girildi!", reply_markup=admin_panel_buttons())
-    else:
-        bot.send_message(message.chat.id, "\u274c Nädogry açarsöz!")
+@bot.message_handler(func=lambda msg: msg.text == "⚙️ Sazlamalar")
+def sazlamalar(message):
+    sazlama = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    sazlama.add("📝 Menýu ýazgy üýtget", "🔑 VPN kod üýtget")
+    sazlama.add("📣 Sponsor kanallary üýtget")
+    sazlama.add("⬅ Yza")
+    bot.send_message(message.chat.id, "⚙️ Sazlamalar bölümi:", reply_markup=sazlama)
 
-def admin_panel_buttons():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("\ud83d\udd27 Sazlamalar")
-    markup.add("\ud83d\udcca Statika", "\ud83d\udd22 Awto Poster")
-    markup.add("\u274e Çyk")
-    return markup
+@bot.message_handler(func=lambda msg: msg.text == "📊 Statistika")
+def statika_handler(message):
+    # Mysal üçin diňe san berilýär
+    bot.send_message(message.chat.id, "👤 Ulanyjylar: 132")
 
-@bot.callback_query_handler(func=lambda call: call.data == "check_subs")
-def check_subscriptions(call):
-    user_id = call.from_user.id
-    not_subscribed = []
+@bot.message_handler(func=lambda msg: msg.text == "📰 Awto Poster")
+def awto_poster(message):
+    bot.send_message(message.chat.id, "🛠 Awto poster funksiýasy heniz işlenilýär.")
 
-    for _, channel_link in channels:
-        try:
-            channel_username = channel_link.split("/")[-1]
-            member = bot.get_chat_member(f"@{channel_username}", user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                not_subscribed.append(channel_username)
-        except Exception:
-            not_subscribed.append(channel_username)
+@bot.message_handler(func=lambda msg: msg.text == "📤 Bildiriş ugrat")
+def bildirish_ugrat(message):
+    bot.send_message(message.chat.id, "🛠 Bildiriş ugratma funksiýasy heniz işlenilýär.")
 
-    if not_subscribed:
-        bot.answer_callback_query(call.id, "\ud83d\udeab Käbir kanallara heniz agza bolan dälsiňiz!", show_alert=True)
-    else:
-        bot.answer_callback_query(call.id, "\u2705 Ulgama üstünlikli girildi!")
-        bot.send_message(call.message.chat.id, menu_text)
+@bot.message_handler(func=lambda msg: msg.text == "🔙 Çyk" or msg.text == "⬅ Yza")
+def cyk_handler(message):
+    start_handler(message)
 
+# Boty başlat
+print("🤖 Bot işläp başlady...")
 bot.infinity_polling()
