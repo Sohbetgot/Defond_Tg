@@ -41,7 +41,7 @@ def joined_callback(call):
     bot.edit_message_text(chat_id=user_id, message_id=call.message.message_id,
                           text="🟢 Agzalygyňyz tassyklanyldy! Indi boty ulanyp bilersiňiz.")
     show_main_menu(user_id)
-    def show_main_menu(chat_id):
+def show_main_menu(chat_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     # beýleki kodlar
     markup.row("VPN kodlaryny almak", "Statika görmek")
