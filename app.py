@@ -1,127 +1,50 @@
 import telebot
 from telebot import types
 
-TOKEN = '7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4'  # <-- Şu ýere bot tokeniňizi goýuň
+TOKEN = '7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4'
 bot = telebot.TeleBot(TOKEN)
 
-# Agza bolmaly kanallaryň sanawy (name + link)
-channels = [
-    ("DM CHANEL", "https://t.me/dm_servers"),
-    ("DM 404 CHAT", "https://t.me/dm_404chat"),
-]
+# Kanallar: [("DM CHANEL", "https://t.me/dm_servers")]
+channels = [("DM CHANEL", "https://t.me/dm_servers")]
+menu_text = "\u2709 Menýu:\n1. Post goşmak\n2. Postlary görmek\n3. Postlary arassala\n4. Aralyk (sekundda): 'Aralyk <sekund>'"
 
-# Ulanyjylaryň ID sanawy — adatça maglumat bazasy ulanýarsyňyz
-users = set()
+admin_password = "ADNİOBERTİ61"
+admins = set()
 
-# Admin açar sözi
-ADMIN_PASSWORD = "ADNİOBERTİ61"  # <-- Şu açar sözi üýtgedip goýuň
-
-# Statika habary üçin funksiýa (agza sanyny görkezýär)
-def get_statika_text():
-    return f"📊 Statika:\n— Agza bolan ulanyjylar: {len(users)}"
-
-
-# Sponsor kanallary + AGZA BOLDUM düwmesini birleşdirýän keyboard
-def get_sponsor_check_keyboard():
-    keyboard = types.InlineKeyboardMarkup()
+def check_subscribe_buttons():
+    markup = types.InlineKeyboardMarkup()
     for name, link in channels:
-        keyboard.add(types.InlineKeyboardButton(text=name, url=link))
-    
-    # AGZA BOLDUM düwmesini goş
-    keyboard.add(types.InlineKeyboardButton(text="✅ AGZA BOLDUM", callback_data="check_subs"))
-    return keyboard
-
-
-# Baş menýu ýazgy
-menu_text = (
-    "Salam, {username}!\n\n"
-    "🌟 Menýu:\n"
-    "1. Menýu ýazgyny üýtgetmek\n"
-    "2. VPN kody üýtgetmek\n"
-    "3. Sponsor kanallary üýtgetmek\n"
-    "4. Statika\n"
-    "5. Awto poster\n"
-    "6. Çykmak\n"
-)
-
+        markup.add(types.InlineKeyboardButton(text=name, url=link))
+    markup.add(types.InlineKeyboardButton("\u2705 AGZA BOLDUM", callback_data="check_subs"))
+    return markup
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    users.add(message.chat.id)
-    username = message.from_user.first_name or "Ulanyjy"
-
-    # Sponsor + AGZA BOLDUM bilen bilelikde diňe bir habarda çykar
-    bot.send_message(
-        message.chat.id,
-        "📢 Agza bolmaly kanallara girmegiňizi haýyş edýäris. Soňra \"✅ AGZA BOLDUM\" düwmesine basyň:",
-        reply_markup=get_sponsor_check_keyboard()
-    )
-    users.add(message.chat.id)  # Her gezek start basylanda agza sanyna goşulýar
-    username = message.from_user.first_name or "Ulanyjy"
-    
-    # Ilki agza bolmaly kanallary görkezýäris
-    bot.send_message(message.chat.id, "📢 Agza bolmaly kanallar:", reply_markup=get_channels_keyboard())
-    
-    # Soň baş menýu görkezilýär
-    bot.send_message(message.chat.id, menu_text.format(username=username))
-
-
-# Admin paneli açmak üçin ulanyjydan açar söz soralýar
-@bot.message_handler(commands=['admin'])
-def admin_login(message):
-    msg = bot.send_message(message.chat.id, "🔑 Admin panel açmak üçin açar sözüňizi ýazyň:")
-    bot.register_next_step_handler(msg, check_admin_password)
-
-
-def check_admin_password(message):
-    if message.text == ADMIN_PASSWORD:
-        # Dogry açar söz girizilende admin panel menýusyny görkez
-        show_admin_panel(message.chat.id)
+    user_id = message.chat.id
+    if user_id not in admins:
+        text = "\u2709 Ilki bilen aşakdaky kanallara agza boluň:"
+        bot.send_message(user_id, text, reply_markup=check_subscribe_buttons())
     else:
-        bot.send_message(message.chat.id, "❌ Ýalňyş açar söz. Ýene synanyşyň.")
+        bot.send_message(user_id, menu_text)
 
+@bot.message_handler(commands=['admin_gir'])
+def admin_gir(message):
+    msg = bot.send_message(message.chat.id, "\ud83d\udd10 Açarsözi giriziň:")
+    bot.register_next_step_handler(msg, check_password)
 
-def show_admin_panel(chat_id):
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("📝 Menýu ýazgyny üýtgetmek")
-    keyboard.add("🔐 VPN kody üýtgetmek")
-    keyboard.add("📢 Sponsor kanallary üýtgetmek")
-    keyboard.add("📊 Statika")
-    keyboard.add("⏰ Awto poster")
-    keyboard.add("🚪 Çykmak")
-    
-    bot.send_message(chat_id, "🛠️ Admin panel:", reply_markup=keyboard)
-
-
-@bot.message_handler(func=lambda message: True)
-def admin_panel_actions(message):
-    text = message.text
-    
-    if text == "📝 Menýu ýazgyny üýtgetmek":
-        bot.send_message(message.chat.id, "Menýu ýazgyny şu ýere ýazyň:")
-        bot.register_next_step_handler(message, save_menu_text)
-    
-    elif text == "🔐 VPN kody üýtgetmek":
-        bot.send_message(message.chat.id, "VPN kodlaryny şu ýere ýazyň:")
-        bot.register_next_step_handler(message, save_vpn_codes)
-        
-    elif text == "📢 Sponsor kanallary üýtgetmek":
-        bot.send_message(message.chat.id, "Sponsor kanallary şu formatda ýazyň (her setiri: Ady - Link):")
-        bot.register_next_step_handler(message, save_sponsor_channels)
-        
-    elif text == "📊 Statika":
-        bot.send_message(message.chat.id, get_statika_text())
-        
-    elif text == "⏰ Awto poster":
-        bot.send_message(message.chat.id, "Awto poster üçin ýazgy we aralygy ýazyň (mysal: Hat, 60):")
-        bot.register_next_step_handler(message, save_auto_poster)
-        
-    elif text == "🚪 Çykmak":
-        bot.send_message(message.chat.id, "Admin panelden çykdyňyz.", reply_markup=types.ReplyKeyboardRemove())
-        
+def check_password(message):
+    if message.text == admin_password:
+        admins.add(message.chat.id)
+        bot.send_message(message.chat.id, "\u2705 Admin paneline üstünlikli girildi!", reply_markup=admin_panel_buttons())
     else:
-        # Admin panelde däl-de, başga zat ýazylsa
-        bot.send_message(message.chat.id, "❓ Nädip kömek edip bilerin? Admin panelde bolmadyk bu buýruk ýa ýazgy.")
+        bot.send_message(message.chat.id, "\u274c Nädogry açarsöz!")
+
+def admin_panel_buttons():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("\ud83d\udd27 Sazlamalar")
+    markup.add("\ud83d\udcca Statika", "\ud83d\udd22 Awto Poster")
+    markup.add("\u274e Çyk")
+    return markup
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_subs")
 def check_subscriptions(call):
@@ -134,48 +57,13 @@ def check_subscriptions(call):
             member = bot.get_chat_member(f"@{channel_username}", user_id)
             if member.status not in ["member", "administrator", "creator"]:
                 not_subscribed.append(channel_username)
-        except Exception as e:
+        except Exception:
             not_subscribed.append(channel_username)
 
     if not_subscribed:
-        bot.answer_callback_query(call.id, "📛 Käbir kanallara heniz agza bolan dälsiňiz!", show_alert=True)
+        bot.answer_callback_query(call.id, "\ud83d\udeab Käbir kanallara heniz agza bolan dälsiňiz!", show_alert=True)
     else:
-        bot.answer_callback_query(call.id, "✅ Ulgama üstünlikli girildi!")
-        bot.send_message(call.message.chat.id, menu_text.format(username=call.from_user.first_name))
+        bot.answer_callback_query(call.id, "\u2705 Ulgama üstünlikli girildi!")
+        bot.send_message(call.message.chat.id, menu_text)
 
-
-# Ýadyňyzda saklaň, bu funksiýalar ýönekeý nusga üçin. Siz özüňize görä maglumatlary saklamak we okamak koduny goşmaly.
-
-def save_menu_text(message):
-    global menu_text
-    menu_text = message.text
-    bot.send_message(message.chat.id, "✅ Menýu ýazgy üstünlikli üýtgedildi.")
-    show_admin_panel(message.chat.id)
-
-
-def save_vpn_codes(message):
-    # Bu ýerde VPN kodlaryny saklamak üçin logika goşuň
-    bot.send_message(message.chat.id, "✅ VPN kodlary üstünlikli kabul edildi.")
-    show_admin_panel(message.chat.id)
-
-
-def save_sponsor_channels(message):
-    global channels
-    lines = message.text.strip().split('\n')
-    new_channels = []
-    for line in lines:
-        if '-' in line:
-            name, link = line.split('-', 1)
-            new_channels.append((name.strip(), link.strip()))
-    channels = new_channels
-    bot.send_message(message.chat.id, "✅ Sponsor kanallary üstünlikli üýtgedildi.")
-    show_admin_panel(message.chat.id)
-
-
-def save_auto_poster(message):
-    # Bu ýerde awto poster ýazgy we wagtyny saklamak üçin logika goşuň
-    bot.send_message(message.chat.id, "✅ Awto poster sazlamalary kabul edildi.")
-    show_admin_panel(message.chat.id)
-
-
-bot.polling(none_stop=True)
+bot.infinity_polling()
