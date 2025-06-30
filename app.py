@@ -1,526 +1,216 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, MessageHandler,
-    filters, ConversationHandler
-)
-import logging
-import sqlite3
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
+import time
 
-# Loglama ayarları
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+BOT_TOKEN = '7915047073:AAFAdbA1dUWazPzfjZT4TJheQcGd8QmYKcA'  # Bot tokenini buraya koy
+ADMIN_ID = 8143084360          # Telegram ID'nizi buraya koy
 
-# --- YAPILANDIRMA AYARLARI ---
-BOT_TOKEN = "7660064921:AAHAl0-wL7q5eGgHFlyPCMgW6ow1u4cS1f4"
-ADMIN_USER_ID = 8143084360 # Kendi Telegram kullanıcı ID'nizi buraya girin!
-# -----------------------------
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# APScheduler başlat
-scheduler = AsyncIOScheduler()
+# Dosyalar:
+BUTTONS_FILE = 'buttons.json'   # Ana düğmeler ve alt düğmeler için
+USERS_FILE = 'users.json'       # Kullanıcı dil ve diğer bilgileri
+MESSAGES_FILE = 'messages.json' # Kullanıcı mesajları ve admin yanıtları
 
-# --- Veritabanı İşlemleri ---
-DATABASE_NAME = 'settings.db'
+# Spam koruma için kullanıcıların son işlem zamanı
+user_last_action = {}
 
-def init_db():
-    """Veritabanını başlatır ve tabloları oluşturur."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS channels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            telegram_id INTEGER NOT NULL UNIQUE,
-            link TEXT NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS scheduled_posts (
-            job_id TEXT PRIMARY KEY,
-            post_text TEXT NOT NULL,
-            interval_minutes INTEGER NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-def get_setting(key, default=None):
-    """Veritabanından bir ayar değerini alır."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else default
-
-def set_setting(key, value):
-    """Veritabanına bir ayar değerini kaydeder veya günceller."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
-    conn.commit()
-    conn.close()
-
-def get_channels():
-    """Veritabanından tüm sponsor kanallarını alır."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, telegram_id, link FROM channels ORDER BY name")
-    channels = [{"ad": row[0], "id": row[1], "link": row[2]} for row in cursor.fetchall()]
-    conn.close()
-    return channels
-
-def add_channel_to_db(name, telegram_id, link):
-    """Veritabanına yeni bir sponsor kanalı ekler."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
+# Yardımcı fonksiyonlar
+def load_json(filename):
     try:
-        cursor.execute("INSERT INTO channels (name, telegram_id, link) VALUES (?, ?, ?)", (name, telegram_id, link))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        logger.warning(f"Kanal ID {telegram_id} zaten mevcut.")
+        with open(filename, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_json(filename, data):
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# Dil verileri - örnek sadece iki dil için kısa metinler
+LANG = {
+    "tm": {
+        "welcome": "Hoş geldiň!",
+        "select_lang": "Dili saýlaň:",
+        "lang_tm": "Türkmençe 🇹🇲",
+        "lang_ru": "Rusça 🇷🇺",
+        "menu_prompt": "Menýudan saýlaň:",
+        "admin_only": "Bu buýruk diňe admin üçindir.",
+        "spam_warning": "⛔ Köp gezek basdyňyz, az wagt garaşyň.",
+        "notify_admin": "📩 Ulanyjy {username} ({user_id}) '{button}' düwmesine basdy.",
+        "msg_sent_admin": "✅ Admine habar iberildi, tiz wagtda jogap berler.",
+        "admin_panel": "🛠 Admin panel",
+        "add_main_btn": "➕ Baş düwme goş",
+        "add_sub_btn": "➕ Sub düwme goş",
+        "delete_btn": "🗑 Düwmäni aýyr",
+        "user_msgs": "📬 Ulanyjylardan gelen habarlar",
+        "reply": "✉ Jogap ber",
+        "broadcast": "📢 Bildiriş ugrat",
+        "stats": "📊 Statistikalar",
+        "block_spam": "⛔ Spamlardan gorag",
+        "enter_main_btn": "➕ Täze baş düwmäniň adyny ýazyň:",
+        "enter_sub_btn_main": "📌 Haysy baş düwmä sub goşmaly? Adyny ýazyň:",
+        "enter_sub_btn_name": "✏ Sub düwmäniň adyny ýazyň:",
+        "enter_sub_btn_text": "💬 Sub düwmäniň ýazgyny ýazyň:",
+        "enter_delete_btn": "🗑 Pozmaly düwmäniň adyny ýazyň:",
+        "no_such_button": "❌ Düwmäni tapyp bolmady.",
+        "already_exists": "⚠ Bu ad bilen düwme eýýäm bar.",
+    },
+    "ru": {
+        "welcome": "Добро пожаловать!",
+        "select_lang": "Выберите язык:",
+        "lang_tm": "Туркменский 🇹🇲",
+        "lang_ru": "Русский 🇷🇺",
+        "menu_prompt": "Выберите из меню:",
+        "admin_only": "Эта команда доступна только администратору.",
+        "spam_warning": "⛔ Слишком много нажатий, подождите немного.",
+        "notify_admin": "📩 Пользователь {username} ({user_id}) нажал на кнопку '{button}'.",
+        "msg_sent_admin": "✅ Сообщение отправлено администратору, скоро ответят.",
+        "admin_panel": "🛠 Админ панель",
+        "add_main_btn": "➕ Добавить главную кнопку",
+        "add_sub_btn": "➕ Добавить под кнопку",
+        "delete_btn": "🗑 Удалить кнопку",
+        "user_msgs": "📬 Сообщения от пользователей",
+        "reply": "✉ Ответить",
+        "broadcast": "📢 Отправить объявление",
+        "stats": "📊 Статистика",
+        "block_spam": "⛔ Защита от спама",
+        "enter_main_btn": "➕ Введите название новой главной кнопки:",
+        "enter_sub_btn_main": "📌 Для какой главной кнопки добавить под кнопку? Введите название:",
+        "enter_sub_btn_name": "✏ Введите название под кнопки:",
+        "enter_sub_btn_text": "💬 Введите текст под кнопки:",
+        "enter_delete_btn": "🗑 Введите название кнопки для удаления:",
+        "no_such_button": "❌ Кнопка не найдена.",
+        "already_exists": "⚠ Кнопка с таким именем уже существует.",
+    }
+}
+
+# Kullanıcının dilini al (varsayılan tm)
+def get_user_lang(user_id):
+    users = load_json(USERS_FILE)
+    return users.get(str(user_id), {}).get('lang', 'tm')
+
+# Dil metnini al
+def tr(user_id, key):
+    lang = get_user_lang(user_id)
+    return LANG.get(lang, LANG['tm']).get(key, '')
+
+# Spam koruması
+def can_proceed(user_id):
+    now = time.time()
+    last = user_last_action.get(user_id, 0)
+    if now - last < 5:
         return False
-    finally:
-        conn.close()
-
-def remove_channel_from_db(telegram_id):
-    """Veritabanından bir sponsor kanalı kaldırır."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM channels WHERE telegram_id = ?", (telegram_id,))
-    conn.commit()
-    rows_affected = cursor.rowcount
-    conn.close()
-    return rows_affected > 0
-
-def add_user_to_db(user_id):
-    """Yeni kullanıcıyı veritabanına ekler."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO users (user_id) VALUES (?)", (user_id,))
-        conn.commit()
-        logger.info(f"Yeni kullanıcı eklendi: {user_id}")
-    except sqlite3.IntegrityError:
-        pass # Kullanıcı zaten varsa bir şey yapma
-    finally:
-        conn.close()
-
-def get_all_users():
-    """Tüm kayıtlı kullanıcı ID'lerini alır."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
-    users = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return users
-
-def add_scheduled_post_to_db(job_id, post_text, interval_minutes):
-    """Zamanlanmış gönderiyi veritabanına kaydeder."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    created_at = datetime.now().isoformat()
-    cursor.execute("INSERT INTO scheduled_posts (job_id, post_text, interval_minutes, created_at) VALUES (?, ?, ?, ?)",
-                   (job_id, post_text, interval_minutes, created_at))
-    conn.commit()
-    conn.close()
-
-def remove_scheduled_post_from_db(job_id):
-    """Veritabanından zamanlanmış gönderiyi kaldırır."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM scheduled_posts WHERE job_id = ?", (job_id,))
-    conn.commit()
-    rows_affected = cursor.rowcount
-    conn.close()
-    return rows_affected > 0
-
-def get_scheduled_posts():
-    """Veritabanından tüm zamanlanmış gönderileri alır."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT job_id, post_text, interval_minutes, created_at FROM scheduled_posts")
-    posts = [{"job_id": row[0], "text": row[1], "interval": row[2], "created_at": row[3]} for row in cursor.fetchall()]
-    conn.close()
-    return posts
-
-# --- Bot Komutları ve İşleyicileri ---
-
-# Konuşma durumları (Kanal Ekleme için)
-CHANNEL_NAME, CHANNEL_ID, CHANNEL_LINK = range(3)
-REMOVE_CHANNEL_CONFIRM = range(1)
-
-# Konuşma durumları (Auto Poster için)
-AUTOPOST_TEXT, AUTOPOST_INTERVAL = range(2)
-
-async def start(update: Update, context):
-    """Kullanıcı /start komutunu kullandığında çalışır ve kullanıcı ID'sini kaydeder."""
-    add_user_to_db(update.effective_user.id) # Kullanıcı ID'sini kaydet
-
-    sponsor_kanallar = get_channels()
-    verilecek_kod = get_setting("vpn_code", "Henüz bir kod ayarlanmadı.")
-
-    keyboard_buttons = []
-    mesaj = "Merhaba! Bu kodu almak için lütfen aşağıdaki kanallara abone olun:\n\n"
-
-    if not sponsor_kanallar:
-        mesaj += "Şu anda sponsor kanal bulunmamaktadır. Lütfen adminin kanalları ayarlamasını bekleyin."
-    else:
-        for kanal in sponsor_kanallar:
-            mesaj += f"- **{kanal['ad']}**: {kanal['link']}\n"
-
-        keyboard_buttons.append([InlineKeyboardButton("Abone Oldum, Kodu Ver!", callback_data='check_subscription')])
-        reply_markup = InlineKeyboardMarkup(keyboard_buttons)
-        mesaj += "\nAbone olduktan sonra aşağıdaki butona basın:"
-        await update.message.reply_text(
-            mesaj,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        return
-
-    await update.message.reply_text(mesaj, parse_mode='Markdown')
-
-
-async def check_subscription(update: Update, context):
-    """Kullanıcı 'Abone Oldum' butonuna bastığında abonelikleri kontrol eder."""
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    all_subscribed = True
-    missing_channels = []
-    sponsor_kanallar = get_channels()
-    verilecek_kod = get_setting("vpn_code", "Henüz bir kod ayarlanmadı.")
-
-    if not sponsor_kanallar:
-        await query.edit_message_text("Şu anda kontrol edilecek sponsor kanal bulunmamaktadır.")
-        return
-
-    for kanal in sponsor_kanallar:
-        try:
-            chat_member = await context.bot.get_chat_member(chat_id=kanal['id'], user_id=user_id)
-            if chat_member.status not in ['member', 'administrator', 'creator']:
-                all_subscribed = False
-                missing_channels.append(kanal)
-        except Exception as e:
-            logger.error(f"Kanal {kanal['ad']} için abonelik kontrol hatası: {e}")
-            all_subscribed = False
-            missing_channels.append(kanal)
-
-    if all_subscribed:
-        await query.edit_message_text(f"GUTLAÝAS 🎉 SİZ HEMME KANALLARA AGZA BOLDUŇYZ !.\n\n{verilecek_kod}")
-    else:
-        mesaj = "Ýalňyşlyk! Heniz Siz Hemme kanallara agza bolmansyňyz ! ýa - da agzalygyňyz baralnyp bilmedi.\nTäzeden aşaky kanallara agza bolandygyňyzy barlaň:\n\n"
-        for kanal in missing_channels:
-            mesaj += f"- **{kanal['ad']}**: {kanal['link']}\n"
-        mesaj += "\nAgza bolanyňyzdan soňra täzeden 'Agza Boldum, Kodu ber!' Düwmesine basyň."
-
-        keyboard_buttons = [[InlineKeyboardButton("✅ AGZA BOLDUM ✅", callback_data='check_subscription')]]
-        reply_markup = InlineKeyboardMarkup(keyboard_buttons)
-
-        await query.edit_message_text(
-            mesaj,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-
-# --- Admin Komutları ---
-
-async def is_admin(update: Update):
-    """Kullanıcının admin olup olmadığını kontrol eder."""
-    return update.effective_user.id == ADMIN_USER_ID
-
-async def admin_only(update: Update, context):
-    """Sadece adminlerin erişebileceği komutlar için yetkilendirme kontrolü."""
-    if not await is_admin(update):
-        await update.message.reply_text("Bu komutu kullanmaya yetkiniz yok.")
-        return False
+    user_last_action[user_id] = now
     return True
 
-async def set_vpn_code(update: Update, context):
-    """Adminin VPN kodunu ayarlamasını sağlar."""
-    if not await admin_only(update, context):
-        return
-
-    if not context.args:
-        await update.message.reply_text("Lütfen yeni VPN kodunu belirtin. Örnek: `/setvpn YENIKOD123`")
-        return
-
-    new_code = " ".join(context.args)
-    set_setting("vpn_code", new_code)
-    await update.message.reply_text(f"VPN kodu başarıyla güncellendi: `{new_code}`")
-
-async def show_channels(update: Update, context):
-    """Adminin mevcut sponsor kanallarını listelemesini sağlar."""
-    if not await admin_only(update, context):
-        return
-
-    channels = get_channels()
-    if not channels:
-        await update.message.reply_text("Henüz kayıtlı sponsor kanal bulunmamaktadır.")
-        return
-
-    mesaj = "Mevcut Sponsor Kanalları:\n\n"
-    for i, kanal in enumerate(channels):
-        mesaj += f"{i+1}. Ad: {kanal['ad']}\n   ID: `{kanal['id']}`\n   Link: {kanal['link']}\n\n"
-    await update.message.reply_text(mesaj, parse_mode='Markdown')
-
-# --- Kanal Ekleme Konuşması ---
-async def add_channel_start(update: Update, context):
-    """Kanal ekleme konuşmasını başlatır."""
-    if not await admin_only(update, context):
-        return ConversationHandler.END
-
-    await update.message.reply_text("Lütfen eklenecek kanalın adını girin (örn: 'Resmi Kanal'):")
-    return CHANNEL_NAME
-
-async def add_channel_name(update: Update, context):
-    """Kanal adını alır ve ID'yi ister."""
-    context.user_data['new_channel_name'] = update.message.text
-    await update.message.reply_text(f"Kanal adı: '{update.message.text}'.\nŞimdi lütfen kanalın Telegram ID'sini girin (örn: -1001234567890):")
-    return CHANNEL_ID
-
-async def add_channel_id(update: Update, context):
-    """Kanal ID'sini alır ve linki ister."""
-    try:
-        channel_id = int(update.message.text)
-        context.user_data['new_channel_id'] = channel_id
-        await update.message.reply_text(f"Kanal ID: `{channel_id}`.\nSon olarak, lütfen kanalın davet linkini girin (örn: https://t.me/kanal_adiniz):")
-        return CHANNEL_LINK
-    except ValueError:
-        await update.message.reply_text("Geçersiz Kanal ID'si. Lütfen sadece sayısal bir değer girin (örn: -1001234567890).")
-        return CHANNEL_ID
-
-async def add_channel_link(update: Update, context):
-    """Kanal linkini alır ve kanalı veritabanına ekler."""
-    context.user_data['new_channel_link'] = update.message.text
-
-    name = context.user_data['new_channel_name']
-    telegram_id = context.user_data['new_channel_id']
-    link = context.user_data['new_channel_link']
-
-    if add_channel_to_db(name, telegram_id, link):
-        await update.message.reply_text(f"Kanal '{name}' başarıyla eklendi.")
-    else:
-        await update.message.reply_text(f"Hata: Kanal ID `{telegram_id}` zaten mevcut veya bir hata oluştu.")
-
-    context.user_data.clear()
-    return ConversationHandler.END
-
-async def cancel(update: Update, context):
-    #Konuşmayı iptal eder."""
-    await update.message.reply_text("İşlem iptal edildi.")
-    context.user_data.clear()
-    return ConversationHandler.END
-
-# --- Kanal Kaldırma Konuşması ---
-async def remove_channel_start(update: Update, context):
-    #Kanal kaldırma konuşmasını başlatır."""
-    if not await admin_only(update, context):
-        return ConversationHandler.END
-
-    channels = get_channels()
-    if not channels:
-        await update.message.reply_text("Kaldırılabilecek bir kanal bulunmamaktadır.")
-        return ConversationHandler.END
-
-    mesaj = "Kaldırmak istediğiniz kanalın Telegram ID'sini girin:\n\n"
-    for i, kanal in enumerate(channels):
-        mesaj += f"{i+1}. Ad: {kanal['ad']}, ID: `{kanal['id']}`\n"
-    mesaj += "\n(Örnek: -1001234567890)"
-
-    await update.message.reply_text(mesaj, parse_mode='Markdown')
-    return REMOVE_CHANNEL_CONFIRM
-
-async def remove_channel_confirm(update: Update, context):
-    #Kanal ID'sini alır ve kanalı kaldırır."""
-    try:
-        channel_id_to_remove = int(update.message.text)
-        if remove_channel_from_db(channel_id_to_remove):
-            await update.message.reply_text(f"Kanal ID `{channel_id_to_remove}` başarıyla kaldırıldı.")
-        else:
-            await update.message.reply_text(f"Kanal ID `{channel_id_to_remove}` bulunamadı veya bir hata oluştu.")
-    except ValueError:
-        await update.message.reply_text("Geçersiz Kanal ID'si. Lütfen sadece sayısal bir değer girin.")
-    finally:
-        context.user_data.clear()
-        return ConversationHandler.END
-
-
-# --- Auto Poster Fonksiyonları ---
-
-async def send_auto_post(context, post_text):
-    """Tüm kayıtlı kullanıcılara otomatik gönderi mesajını gönderir."""
-    users = get_all_users()
-    for user_id in users:
-        try:
-            await context.bot.send_message(chat_id=user_id, text=post_text)
-            logger.info(f"Otomatik gönderi kullanıcıya gönderildi: {user_id}")
-        except Exception as e:
-            logger.error(f"Kullanıcı {user_id} için otomatik gönderi hatası: {e}")
-            # Hata durumunda kullanıcıyı veritabanından kaldırmayı düşünebilirsiniz
-            # (örneğin, botu engellemişse)
-
-async def start_auto_post(update: Update, context):
-    #Auto Poster konuşmasını başlatır."""
-    if not await admin_only(update, context):
-        return ConversationHandler.END
-
-    await update.message.reply_text("Lütfen otomatik gönderilecek mesajın metnini girin:")
-    return AUTOPOST_TEXT
-
-async def get_autopost_text(update: Update, context):
-    #Otomatik gönderi metnini alır ve aralığı ister."""
-    context.user_data['autopost_text'] = update.message.text
-    await update.message.reply_text("Mesaj metni alındı.\nŞimdi lütfen kaç dakikada bir gönderileceğini girin (sadece sayı, örn: 60):")
-    return AUTOPOST_INTERVAL
-
-async def get_autopost_interval(update: Update, context):
-    #Otomatik gönderi aralığını alır ve planlamayı yapar."""
-    try:
-        interval_minutes = int(update.message.text)
-        if interval_minutes <= 0:
-            await update.message.reply_text("Geçersiz dakika değeri. Lütfen 0'dan büyük bir sayı girin.")
-            return AUTOPOST_INTERVAL
-
-        post_text = context.user_data['autopost_text']
-
-        # APScheduler'a görevi ekle
-        job_id = f"autopost_{datetime.now().timestamp()}" # Benzersiz bir job ID oluştur
-        scheduler.add_job(send_auto_post, 'interval', minutes=interval_minutes, args=[context, post_text], id=job_id)
-
-        # Görevi veritabanına kaydet
-        add_scheduled_post_to_db(job_id, post_text, interval_minutes)
-
-        await update.message.reply_text(
-            f"Otomatik gönderi başarıyla planlandı!\n"
-            f"Metin: `{post_text}`\n"
-            f"Her {interval_minutes} dakikada bir gönderilecek.\n"
-            f"Bu gönderiyi durdurmak için `/autoposter_stop {job_id}` komutunu kullanabilirsiniz."
-        )
-        logger.info(f"Otomatik gönderi planlandı: {job_id}")
-
-    except ValueError:
-        await update.message.reply_text("Geçersiz dakika değeri. Lütfen sadece sayısal bir değer girin (örn: 60).")
-        return AUTOPOST_INTERVAL
-    finally:
-        context.user_data.clear()
-        return ConversationHandler.END
-
-async def stop_auto_post(update: Update, context):
-    #Otomatik gönderiyi durdurur."""
-    if not await admin_only(update, context):
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "Lütfen durdurulacak otomatik gönderinin ID'sini belirtin. "
-            "Tümünü listelemek için `/autoposter_list` kullanın. "
-            "Örnek: `/autoposter_stop autopost_1700000000.0`"
-        )
-        return
-
-    job_id_to_stop = context.args[0]
-    try:
-        scheduler.remove_job(job_id_to_stop)
-        if remove_scheduled_post_from_db(job_id_to_stop):
-            await update.message.reply_text(f"Otomatik gönderi `{job_id_to_stop}` başarıyla durduruldu ve kaldırıldı.")
-            logger.info(f"Otomatik gönderi durduruldu: {job_id_to_stop}")
-        else:
-            await update.message.reply_text(f"Otomatik gönderi `{job_id_to_stop}` bulunamadı veya veritabanından kaldırılamadı.")
-    except Exception as e:
-        await update.message.reply_text(f"Otomatik gönderiyi durdururken bir hata oluştu: {e}")
-        logger.error(f"Otomatik gönderi durdurma hatası: {e}")
-
-
-async def list_auto_posts(update: Update, context):
-    """Planlanmış otomatik gönderileri listeler."""
-    if not await admin_only(update, context):
-        return
-
-    posts = get_scheduled_posts()
-    if not posts:
-        await update.message.reply_text("Şu anda planlanmış otomatik gönderi bulunmamaktadır.")
-        return
-
-    mesaj = "Planlanmış Otomatik Gönderiler:\n\n"
-    for post in posts:
-        mesaj += (
-            f"**ID**: `{post['job_id']}`\n"
-            f"**Metin**: `{post['text'][:50]}...` (ilk 50 karakter)\n"
-            f"**Aralık**: Her {post['interval']} dakika\n"
-            f"**Oluşturulma**: {post['created_at']}\n"
-            f"Durdurmak için: `/autoposter_stop {post['job_id']}`\n\n"
-        )
-    await update.message.reply_text(mesaj, parse_mode='Markdown')
-
-
-async def unknown(update: Update, context):
-    #Bilinmeyen komutlara cevap verir."""
-    await update.message.reply_text("Üzgünüm, bu komutu anlamadım. Lütfen '/start' yazarak başlayın.")
-
-def main():
-    #Botu ve zamanlayıcıyı çalıştırır."""
-    init_db() # Veritabanını başlat
-
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Kullanıcı komutları
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(check_subscription, pattern='check_subscription'))
-
-    # Admin komutları
-    application.add_handler(CommandHandler("setvpn", set_vpn_code))
-    application.add_handler(CommandHandler("showchannels", show_channels))
-
-    # Kanal ekleme konuşması
-    add_channel_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('addchannel', add_channel_start)],
-        states={
-            CHANNEL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_name)],
-            CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_id)],
-            CHANNEL_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_link)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
+# Dil seçimi için inline klavye
+def lang_keyboard():
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("Türkmençe 🇹🇲", callback_data="setlang_tm"),
+        InlineKeyboardButton("Русский 🇷🇺", callback_data="setlang_ru")
     )
-    application.add_handler(autoposter_conv_handler)
+    return markup
 
-    # Auto Poster yönetim komutları
-    application.add_handler(CommandHandler("autoposter_stop", stop_auto_post))
-    application.add_handler(CommandHandler("autoposter_list", list_auto_posts))
+# Ana menü düğmeleri oluştur
+def main_menu_markup(user_id):
+    buttons = load_json(BUTTONS_FILE)
+    markup = InlineKeyboardMarkup()
+    for main_btn in buttons.keys():
+        markup.add(InlineKeyboardButton(main_btn, callback_data=f"main_{main_btn}"))
+    return markup
 
-    # Bilinmeyen komutlar için işleyici (en sona eklenmeli)
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
+# Sub menü düğmeleri oluştur
+def sub_menu_markup(main_btn):
+    buttons = load_json(BUTTONS_FILE)
+    markup = InlineKeyboardMarkup()
+    for sub_btn in buttons.get(main_btn, {}).keys():
+        markup.add(InlineKeyboardButton(sub_btn, callback_data=f"sub_{main_btn}_{sub_btn}"))
+    return markup
 
-    # Scheduler'ı başlat
-    scheduler.start()
-    logger.info("APScheduler başlatıldı.")
+# Başlangıç
+@bot.message_handler(commands=['start'])
+def start_handler(m):
+    user_id = m.from_user.id
+    users = load_json(USERS_FILE)
+    if str(user_id) not in users or 'lang' not in users[str(user_id)]:
+        bot.send_message(user_id, "Dili saýlaň / Выберите язык:", reply_markup=lang_keyboard())
+    else:
+        bot.send_message(user_id, f"{tr(user_id, 'welcome')}\n👤 @{m.from_user.username} | ID: {user_id}", reply_markup=main_menu_markup(user_id))
 
-    # Botu çalıştırmaya başla
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+# Dil seçimi callback
+@bot.callback_query_handler(func=lambda c: c.data.startswith('setlang_'))
+def lang_setter(c):
+    lang_code = c.data.split('_')[1]
+    users = load_json(USERS_FILE)
+    users[str(c.from_user.id)] = {'lang': lang_code}
+    save_json(USERS_FILE, users)
+    bot.answer_callback_query(c.id, "Dil saýlandy / Язык выбран")
+    bot.send_message(c.from_user.id, f"{tr(c.from_user.id, 'welcome')}\n👤 @{c.from_user.username} | ID: {c.from_user.id}", reply_markup=main_menu_markup(c.from_user.id))
 
-    # Uygulama durduğunda scheduler'ı kapat
-    scheduler.shutdown()
-    logger.info("APScheduler kapatıldı.")
+# Ana düğme basıldığında
+@bot.callback_query_handler(func=lambda c: c.data.startswith('main_'))
+def main_button_handler(c):
+    if not can_proceed(c.from_user.id):
+        bot.answer_callback_query(c.id, tr(c.from_user.id, 'spam_warning'))
+        return
 
+    main_btn = c.data[5:]
+    markup = sub_menu_markup(main_btn)
+    if not markup.keyboard:
+        bot.answer_callback_query(c.id, "⚠ Bu düwme üçin sub düwme ýok.")
+        return
+    bot.send_message(c.from_user.id, f"🔽 {main_btn}", reply_markup=markup)
 
-if __name__ == '__main__':
-    main()
+# Sub düğme basıldığında
+@bot.callback_query_handler(func=lambda c: c.data.startswith('sub_'))
+def sub_button_handler(c):
+    if not can_proceed(c.from_user.id):
+        bot.answer_callback_query(c.id, tr(c.from_user.id, 'spam_warning'))
+        return
+
+    parts = c.data.split('_')
+    main_btn = parts[1]
+    sub_btn = parts[2]
+    buttons = load_json(BUTTONS_FILE)
+    text = buttons.get(main_btn, {}).get(sub_btn, "⚠ Bu düwme üçin ýazgy ýok.")
+
+    bot.send_message(c.from_user.id, f"{text}\n\n👤 @{c.from_user.username} | ID: {c.from_user.id}")
+
+    # Admina bildirim gönder
+    bot.send_message(ADMIN_ID, LANG[get_user_lang(ADMIN_ID)]['notify_admin'].format(
+        username=c.from_user.username or "NoUsername",
+        user_id=c.from_user.id,
+        button=sub_btn
+    ))
+
+    # Kullanıcıya bilgi mesajı
+    bot.answer_callback_query(c.id, tr(c.from_user.id, 'msg_sent_admin'))
+
+# Admin paneli - basit örnek (geliştirilebilir)
+@bot.message_handler(commands=['panel'])
+def admin_panel(m):
+    if m.from_user.id != ADMIN_ID:
+        bot.reply_to(m, tr(m.from_user.id, 'admin_only'))
+        return
+
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton(LANG['tm']['add_main_btn'], callback_data="admin_add_main"),
+        InlineKeyboardButton(LANG['tm']['add_sub_btn'], callback_data="admin_add_sub"),
+        InlineKeyboardButton(LANG['tm']['delete_btn'], callback_data="admin_delete"),
+    )
+    markup.row(
+        InlineKeyboardButton(LANG['tm']['user_msgs'], callback_data="admin_user_msgs"),
+        InlineKeyboardButton(LANG['tm']['broadcast'], callback_data="admin_broadcast"),
+    )
+    bot.send_message(m.chat.id, LANG['tm']['admin_panel'], reply_markup=markup)
+
+# Burada admin callback handler eklenmeli
+# ... (admin için ek özellikler ve işleyiş buraya eklenmeli)
+
+# Botu başlat
+print("Bot başladı...")
+bot.infinity_polling()
